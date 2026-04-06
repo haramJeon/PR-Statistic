@@ -1078,7 +1078,7 @@ function computeStats() {
   }
 
   const rows = Object.entries(uStats).map(([l,s])=>({
-    login:l, pr_count:s.pr_count, participated:s.participated,
+    login:l, pr_count:s.pr_count, participated:s.participated, requested:s.requested,
     // 본인이 만든 PR은 리뷰 불가 → authored PR도 분자·분모에 포함해 참여율 산정
     part_rate: (s.requested+s.pr_count)>0 ? (s.participated+s.pr_count)/(s.requested+s.pr_count)*100 : 0,
     avg_resp: avg(s.respT), med_resp: median(s.respT), avg_appr: avg(s.apprT),

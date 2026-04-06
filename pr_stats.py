@@ -289,32 +289,56 @@ def fetch_worker(store, client, repos, state, max_prs,
             except Exception:
                 timeline = []
 
-            requested_at = {}
+            # ── 리뷰어별 이벤트 수집 (timeline + reviews 합산)
+            rev_raw = {}  # login -> [(t, type, state)]
             for ev in timeline:
-                if ev.get("event") == "review_requested":
+                evt = ev.get("event")
+                if evt in ("review_requested", "review_request_removed"):
                     req   = ev.get("requested_reviewer") or {}
                     login = req.get("login", "")
                     t     = parse_dt(ev.get("created_at"))
                     if login and login != author and t:
-                        if login not in requested_at or t < requested_at[login]:
-                            requested_at[login] = t
+                        rev_raw.setdefault(login, []).append((t, evt, ""))
 
-            first_reviewed = {}
-            first_approved = {}
-            comment_count  = 0
-            for rev in sorted(reviews, key=lambda r: r.get("submitted_at") or ""):
+            comment_count = 0
+            for rev in reviews:
                 login   = (rev.get("user") or {}).get("login", "")
                 state_r = rev.get("state", "")
-                body    = rev.get("body","") or ""
+                body    = rev.get("body", "") or ""
                 t       = parse_dt(rev.get("submitted_at"))
                 if not login or login == author or t is None:
                     continue
                 if state_r == "COMMENTED" and body:
                     comment_count += 1
-                if login not in first_reviewed:
-                    first_reviewed[login] = t
-                if state_r == "APPROVED" and login not in first_approved:
-                    first_approved[login] = t
+                rev_raw.setdefault(login, []).append((t, "review", state_r))
+
+            # ── 시간순 정렬 후 요청-응답 쌍 구성
+            requested_at  = {}  # login -> 마지막 요청 (참여율 계산용)
+            first_reviewed = {}
+            first_approved = {}
+            pairs_by_login = {}  # login -> [{requested_at, reviewed_at}]
+
+            for login, events in rev_raw.items():
+                events.sort(key=lambda x: x[0])
+                cur_req = None
+                for t, etype, state in events:
+                    if etype == "review_requested":
+                        cur_req = t
+                        if login not in requested_at or t > requested_at[login]:
+                            requested_at[login] = t
+                    elif etype == "review_request_removed":
+                        cur_req = None
+                    elif etype == "review":
+                        if login not in first_reviewed:
+                            first_reviewed[login] = t
+                        if state == "APPROVED" and login not in first_approved:
+                            first_approved[login] = t
+                        if cur_req is not None:
+                            pairs_by_login.setdefault(login, []).append({
+                                "requested_at": iso(cur_req),
+                                "reviewed_at":  iso(t),
+                            })
+                            cur_req = None  # 응답 후 다음 재요청을 기다림
 
             all_logins = set(requested_at) | set(first_reviewed)
             reviewer_events = [
@@ -323,6 +347,7 @@ def fetch_worker(store, client, repos, state, max_prs,
                     "requested_at":      iso(requested_at.get(l)),
                     "first_reviewed_at": iso(first_reviewed.get(l)),
                     "first_approved_at": iso(first_approved.get(l)),
+                    "req_resp_pairs":    pairs_by_login.get(l, []),
                 }
                 for l in all_logins
             ]
@@ -378,6 +403,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve(200, "text/html; charset=utf-8", HTML_PAGE.encode())
         elif self.path == "/stream":
             self._sse()
+        elif self.path == "/config":
+            self._get_config()
         else:
             self.send_error(404)
 
@@ -390,6 +417,10 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             body   = json.loads(self.rfile.read(length) or b"{}")
             self._add_repo(body)
+        elif self.path == "/config":
+            length = int(self.headers.get("Content-Length", 0))
+            body   = json.loads(self.rfile.read(length) or b"{}")
+            self._save_config(body)
         else:
             self.send_error(404)
 
@@ -399,6 +430,25 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "POST")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+    # ── Config load / save
+    CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pr_stats_config.json")
+
+    def _get_config(self):
+        try:
+            with open(self.CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = f.read().encode("utf-8")
+            self._serve(200, "application/json", data)
+        except FileNotFoundError:
+            self._serve(200, "application/json", b"{}")
+
+    def _save_config(self, body):
+        try:
+            with open(self.CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(body, f, ensure_ascii=False, indent=2)
+            self._serve(200, "application/json", b'{"ok":true}')
+        except Exception as e:
+            self._serve(500, "application/json", json.dumps({"error": str(e)}).encode())
 
     # ── Add repo (fetch collaborators)
     def _add_repo(self, body):
@@ -695,13 +745,43 @@ tr:hover td{background:#1e2130}
       <div class="box"><div id="ch7"></div></div>
       <div class="box"><div id="ch8"></div></div>
     </div>
-    <div class="grid2"><div class="box full"><div id="ch9"></div></div></div>
+    <div class="grid2"><div class="box full">
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px 0">
+        <label style="font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="ch9-all" onchange="renderCh9()"
+            style="accent-color:var(--accent)">
+          전체 응답시간 보기
+        </label>
+      </div>
+      <div id="ch9"></div>
+    </div></div>
     <div id="tbl">
       <h2>리뷰어 상세 통계</h2>
       <table><thead><tr>
-        <th>리뷰어</th><th>PR 생성</th><th>리뷰 참여</th><th>참여율</th>
-        <th>평균 응답시간</th><th>평균 승인시간</th><th>중간값 응답시간</th><th>리뷰한 PR</th>
+        <th>리뷰어</th><th>PR 생성</th><th>요청받은 PR</th><th>리뷰 참여</th><th>참여율</th>
+        <th>평균 응답시간</th><th>최장 응답시간</th>
       </tr></thead><tbody id="tbody"></tbody></table>
+    </div>
+    <div id="pr-detail" style="display:none;margin-top:14px">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+          <h2 style="font-size:.88rem;white-space:nowrap">PR 응답 목록</h2>
+          <select id="pr-detail-select"
+            style="background:#0f1117;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:.82rem"
+            onchange="renderPrDetail()"></select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <div style="font-size:.75rem;color:#2ecc71;font-weight:600;margin-bottom:6px">응답한 PR (<span id="resp-count">0</span>)</div>
+            <div id="resp-list" style="display:flex;flex-direction:column;gap:3px;max-height:320px;overflow-y:auto"></div>
+          </div>
+          <div>
+            <div style="font-size:.75rem;color:#e74c3c;font-weight:600;margin-bottom:6px">응답하지 않은 PR (<span id="noresp-count">0</span>)</div>
+            <div id="noresp-list" style="display:flex;flex-direction:column;gap:3px;max-height:320px;overflow-y:auto"></div>
+          </div>
+        </div>
+        <div style="font-size:.72rem;color:#555;margin-top:10px">응답하지 않은 PR은 소요시간에 합계 되지 않습니다.</div>
+      </div>
     </div>
   </div>
 </div>
@@ -715,6 +795,8 @@ let RELEVANT_TOTAL = 0;
 let es = null;
 let renderTimer = null;
 let REPOS = [];
+let CHART_ROWS = [];
+let CHART_USTATS = {};
 
 // ── Utils
 const $ = id => document.getElementById(id);
@@ -854,12 +936,170 @@ function getSelectedUsers() {
   return [...$('member-list').querySelectorAll('input:checked')].map(cb=>cb.value);
 }
 
+// ── 산점도 ch9
+const PERSON_COLORS = ['#3498db','#2ecc71','#e67e22','#9b59b6','#1abc9c','#e74c3c','#f39c12','#00bcd4','#ff7675','#a29bfe','#fd79a8','#55efc4'];
+function renderCh9() {
+  if (!CHART_ROWS.length) return;
+  const showAll = $('ch9-all') && $('ch9-all').checked;
+  if (showAll) {
+    // 전체 모드: 사람별 모든 응답시간 점 표시
+    const traces = CHART_ROWS
+      .filter(r => CHART_USTATS[r.login] && CHART_USTATS[r.login].respT.length)
+      .map((r, i) => {
+        const ts = CHART_USTATS[r.login].respT;
+        const color = PERSON_COLORS[i % PERSON_COLORS.length];
+        return {
+          type: 'scatter', mode: 'markers',
+          name: r.login,
+          x: ts.map(t => t.h),
+          y: ts.map(() => r.part_rate),
+          customdata: ts.map(t => [t.number, t.title]),
+          marker: {size: 8, color, opacity: 0.75, line: {color: '#0f1117', width: 1}},
+          hovertemplate: `<b>${r.login}</b><br>PR #%{customdata[0]} %{customdata[1]}<br>응답시간: %{x:.1f}h<br>참여율: ${r.part_rate.toFixed(1)}%<extra></extra>`,
+        };
+      });
+    const scLayout = lo(420, {
+      title: {text: '리뷰어 산점도: 전체 응답시간 vs 참여율', font: {color: '#e0e0e0', size: 12}},
+      xaxis: {title: '응답시간 (h)', gridcolor: '#2a2d3e', color: '#888', rangemode: 'tozero'},
+      yaxis: {title: '참여율 (%)', range: [-5, 115], gridcolor: '#2a2d3e', color: '#888'},
+      showlegend: true,
+      legend: {font: {color: '#e0e0e0', size: 10}, bgcolor: 'transparent'},
+      margin: {l:52, r:120, t:48, b:56},
+    });
+    Plotly.react('ch9', traces, scLayout, cfg);
+  } else {
+    // 평균 모드: 기존 방식
+    const scRows = CHART_ROWS.filter(r => r.avg_resp != null && r.requested > 0);
+    if (scRows.length < 2) { $('ch9').innerHTML = ''; return; }
+    const xs = scRows.map(r => r.avg_resp);
+    const ys = scRows.map(r => r.part_rate);
+    const medResp = median(xs);
+    const medPart = median(ys);
+    const xMax = Math.max(...xs) * 1.15 || 1;
+    const scColors = scRows.map(r =>
+      r.avg_resp <= medResp && r.part_rate >= medPart ? '#2ecc71' :
+      r.avg_resp >  medResp && r.part_rate >= medPart ? '#e67e22' :
+      r.avg_resp <= medResp && r.part_rate <  medPart ? '#3498db' :
+      '#e74c3c'
+    );
+    const scLayout = lo(420, {
+      title: {text: '리뷰어 산점도: 평균 응답시간 vs 참여율', font: {color: '#e0e0e0', size: 12}},
+      xaxis: {title: '평균 응답시간 (h)', gridcolor: '#2a2d3e', color: '#888', rangemode: 'tozero'},
+      yaxis: {title: '참여율 (%)', range: [-5, 115], gridcolor: '#2a2d3e', color: '#888'},
+      showlegend: false,
+      shapes: [
+        {type:'line',x0:medResp,x1:medResp,y0:-5,y1:115,line:{color:'#444',dash:'dot',width:1.2}},
+        {type:'line',x0:0,x1:xMax,y0:medPart,y1:medPart,line:{color:'#444',dash:'dot',width:1.2}},
+      ],
+      annotations: [
+        {x:0, y:115, xref:'paper', yref:'y', text:'빠름 + 높은 참여', showarrow:false, font:{color:'#2ecc71',size:9}, xanchor:'left'},
+        {x:1, y:115, xref:'paper', yref:'y', text:'느림 + 높은 참여', showarrow:false, font:{color:'#e67e22',size:9}, xanchor:'right'},
+        {x:0, y:-2,  xref:'paper', yref:'y', text:'빠름 + 낮은 참여', showarrow:false, font:{color:'#3498db',size:9}, xanchor:'left'},
+        {x:1, y:-2,  xref:'paper', yref:'y', text:'느림 + 낮은 참여', showarrow:false, font:{color:'#e74c3c',size:9}, xanchor:'right'},
+        {x:medResp, y:115, xref:'x', yref:'y', text:`중간값 ${fmtH(medResp)}`, showarrow:false, font:{color:'#666',size:9}, yshift:0},
+      ],
+      margin: {l:52, r:20, t:48, b:56},
+    });
+    Plotly.react('ch9', [{
+      type:'scatter', mode:'markers+text',
+      x: xs, y: ys,
+      text: scRows.map(r => r.login),
+      textposition: 'top center',
+      textfont: {size: 10, color: '#e0e0e0'},
+      marker: {size: 13, color: scColors, line: {color: '#0f1117', width: 1.5}, opacity: 0.9},
+      hovertemplate: '<b>%{text}</b><br>응답시간: %{x:.1f}h<br>참여율: %{y:.1f}%<extra></extra>',
+    }], scLayout, cfg);
+  }
+}
+
+// ── Config persistence
+function saveConfig() {
+  const allMembers = [...$('member-list').querySelectorAll('input')].map(cb => ({
+    login: cb.value, checked: cb.checked,
+  }));
+  fetch('/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({repos: REPOS, members: allMembers}),
+  }).catch(() => {});
+}
+
+async function loadConfig() {
+  let cfg;
+  try {
+    const r = await fetch('/config');
+    cfg = await r.json();
+  } catch(e) { return; }
+  if (!cfg || (!cfg.repos?.length && !cfg.members?.length)) return;
+
+  // 저장소 복원
+  for (const repo of (cfg.repos || [])) {
+    if (REPOS.find(r => r.name === repo.name)) continue;
+    try {
+      const r = await fetch('/add-repo', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({repo: repo.name}),
+      });
+      const data = await r.json();
+      if (!data.error) {
+        REPOS.push({name: repo.name, count: data.collaborators?.length ?? repo.count});
+        renderRepoList();
+        rebuildMembers(data.collaborators || []);
+      }
+    } catch(e) {}
+  }
+
+  // 체크 상태 복원 (저장소 로드 후 rebuildMembers 로 이미 추가됨)
+  const memberMap = {};
+  for (const m of (cfg.members || [])) memberMap[m.login] = m.checked;
+  $('member-list').querySelectorAll('input').forEach(cb => {
+    if (cb.value in memberMap) cb.checked = memberMap[cb.value];
+  });
+  updateSelChips();
+}
+
+// ── PR 응답 목록
+function updatePrDetailSelect() {
+  const sel = $('pr-detail-select');
+  if (!sel) return;
+  sel.innerHTML = CHART_ROWS.map(r => `<option value="${r.login}">${r.login}</option>`).join('');
+  $('pr-detail').style.display = CHART_ROWS.length ? '' : 'none';
+  renderPrDetail();
+}
+
+function renderPrDetail() {
+  const login = $('pr-detail-select').value;
+  const u = CHART_USTATS[login];
+  if (!u) return;
+  const prItem = (p, color) => {
+    const url = `https://github.com/${p.repo}/pull/${p.number}`;
+    return `<div style="padding:4px 8px;background:#0f1117;border-radius:5px;font-size:.78rem">
+      <a href="${url}" target="_blank" rel="noopener"
+         style="color:${color};text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+         title="#${p.number} ${p.title}">
+        <span style="color:#555;margin-right:4px">#${p.number}</span>${p.title}
+      </a>
+    </div>`;
+  };
+  $('resp-count').textContent = u.respT.length;
+  $('noresp-count').textContent = u.noRespT.length;
+  $('resp-list').innerHTML = u.respT.length
+    ? u.respT.map(p => prItem(p, '#c8e6c9')).join('')
+    : '<div style="font-size:.75rem;color:#555;padding:4px 8px">없음</div>';
+  $('noresp-list').innerHTML = u.noRespT.length
+    ? u.noRespT.map(p => prItem(p, '#ffcdd2')).join('')
+    : '<div style="font-size:.75rem;color:#555;padding:4px 8px">없음</div>';
+}
+
 // ── Analysis
 function startAnalysis() {
   if (!REPOS.length) { alert('저장소를 추가하세요.'); return; }
   const repoNames = REPOS.map(r => r.name);
   const users = getSelectedUsers();
   if (!users.length) { alert('팀원을 선택하세요.'); return; }
+
+  saveConfig();
 
   // 이전 SSE 닫기
   if (es) { es.close(); es = null; }
@@ -899,8 +1139,8 @@ async function saveHtml() {
   btn.textContent = '저장 중...';
 
   try {
-    // ch8 제외 나머지 차트를 SVG 이미지로 변환
-    const chartIds = ['ch1','ch2','ch3','ch4','ch5','ch6','ch7','ch9'];
+    // ch8, ch9 제외 나머지 차트를 SVG 이미지로 변환
+    const chartIds = ['ch1','ch2','ch3','ch4','ch5','ch6','ch7'];
     const chartImgs = {};
     for (const id of chartIds) {
       const el = $(id);
@@ -919,6 +1159,55 @@ async function saveHtml() {
       ? `<div id="ch8-saved" style="width:100%;height:320px"></div>
          <script>Plotly.newPlot('ch8-saved',${ch8Data},Object.assign(${ch8Layout},{paper_bgcolor:'#1a1d2e',plot_bgcolor:'#1a1d2e'}),{responsive:true,displayModeBar:false})<\/script>`
       : `<div style="padding:20px;color:#888;text-align:center">코드 변경량 vs 머지 소요시간 (데이터 없음)</div>`;
+
+    // ch9 + PR목록: CHART_ROWS/CHART_USTATS 직렬화
+    const ch9Rows   = JSON.stringify(CHART_ROWS);
+    const ch9Ustats = JSON.stringify(Object.fromEntries(
+      Object.entries(CHART_USTATS).map(([k,v]) => [k, {respT: v.respT, noRespT: v.noRespT}])
+    ));
+    const ch9Html = CHART_ROWS.length
+      ? `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px 0">
+           <label style="font-size:.8rem;color:#888;display:flex;align-items:center;gap:5px;cursor:pointer">
+             <input type="checkbox" id="ch9-saved-cb" onchange="renderCh9Saved()" style="accent-color:#3498db">
+             전체 응답시간 보기
+           </label>
+         </div>
+         <div id="ch9-saved" style="width:100%;height:420px"></div>
+         <script>
+         (function(){
+           const ROWS=${ch9Rows}, USTATS=${ch9Ustats};
+           const COLORS=['#3498db','#2ecc71','#e67e22','#9b59b6','#1abc9c','#e74c3c','#f39c12','#00bcd4','#ff7675','#a29bfe','#fd79a8','#55efc4'];
+           const fmtH=h=>{if(h==null||isNaN(h))return'N/A';if(h<1)return Math.round(h*60)+'분';if(h<24)return h.toFixed(1)+'h';return(h/24).toFixed(1)+'일';};
+           const avg=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:null;
+           const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[Math.floor(s.length/2)];};
+           const LO={paper_bgcolor:'#1a1d2e',plot_bgcolor:'#1a1d2e',font:{color:'#e0e0e0'},margin:{l:52,r:20,t:48,b:56},xaxis:{gridcolor:'#2a2d3e',color:'#888'},yaxis:{gridcolor:'#2a2d3e',color:'#888'}};
+           const lo=(h,ex)=>({...LO,...ex,height:h,xaxis:{...LO.xaxis,...(ex.xaxis||{})},yaxis:{...LO.yaxis,...(ex.yaxis||{})}});
+           const cfg={responsive:true,displayModeBar:false};
+           window.renderCh9Saved=function(){
+             const showAll=document.getElementById('ch9-saved-cb').checked;
+             if(showAll){
+               const traces=ROWS.filter(r=>USTATS[r.login]&&USTATS[r.login].respT.length).map((r,i)=>{
+                 const ts=USTATS[r.login].respT, color=COLORS[i%COLORS.length];
+                 return{type:'scatter',mode:'markers',name:r.login,x:ts.map(t=>t.h),y:ts.map(()=>r.part_rate),
+                   customdata:ts.map(t=>[t.number,t.title]),
+                   marker:{size:8,color,opacity:.75,line:{color:'#0f1117',width:1}},
+                   hovertemplate:'<b>'+r.login+'</b><br>PR #%{customdata[0]} %{customdata[1]}<br>응답시간: %{x:.1f}h<br>참여율: '+r.part_rate.toFixed(1)+'%<extra></extra>'};
+               });
+               Plotly.react('ch9-saved',traces,lo(420,{title:{text:'리뷰어 산점도: 전체 응답시간 vs 참여율',font:{color:'#e0e0e0',size:12}},showlegend:true,legend:{font:{color:'#e0e0e0',size:10},bgcolor:'transparent'},margin:{l:52,r:120,t:48,b:56},xaxis:{title:'응답시간 (h)',rangemode:'tozero'},yaxis:{title:'참여율 (%)',range:[-5,115]}}),cfg);
+             } else {
+               const sc=ROWS.filter(r=>r.avg_resp!=null&&r.requested>0);
+               if(sc.length<2){Plotly.react('ch9-saved',[],lo(420,{}),cfg);return;}
+               const xs=sc.map(r=>r.avg_resp),ys=sc.map(r=>r.part_rate);
+               const mR=median(xs),mP=median(ys),xMax=Math.max(...xs)*1.15||1;
+               const colors=sc.map(r=>r.avg_resp<=mR&&r.part_rate>=mP?'#2ecc71':r.avg_resp>mR&&r.part_rate>=mP?'#e67e22':r.avg_resp<=mR&&r.part_rate<mP?'#3498db':'#e74c3c');
+               Plotly.react('ch9-saved',[{type:'scatter',mode:'markers+text',x:xs,y:ys,text:sc.map(r=>r.login),textposition:'top center',textfont:{size:10,color:'#e0e0e0'},marker:{size:13,color:colors,line:{color:'#0f1117',width:1.5},opacity:.9},hovertemplate:'<b>%{text}</b><br>응답시간: %{x:.1f}h<br>참여율: %{y:.1f}%<extra></extra>'}],
+                 lo(420,{title:{text:'리뷰어 산점도: 평균 응답시간 vs 참여율',font:{color:'#e0e0e0',size:12}},showlegend:false,xaxis:{title:'평균 응답시간 (h)',rangemode:'tozero'},yaxis:{title:'참여율 (%)',range:[-5,115]},shapes:[{type:'line',x0:mR,x1:mR,y0:-5,y1:115,line:{color:'#444',dash:'dot',width:1.2}},{type:'line',x0:0,x1:xMax,y0:mP,y1:mP,line:{color:'#444',dash:'dot',width:1.2}}],annotations:[{x:0,y:115,xref:'paper',yref:'y',text:'빠름 + 높은 참여',showarrow:false,font:{color:'#2ecc71',size:9},xanchor:'left'},{x:1,y:115,xref:'paper',yref:'y',text:'느림 + 높은 참여',showarrow:false,font:{color:'#e67e22',size:9},xanchor:'right'},{x:0,y:-2,xref:'paper',yref:'y',text:'빠름 + 낮은 참여',showarrow:false,font:{color:'#3498db',size:9},xanchor:'left'},{x:1,y:-2,xref:'paper',yref:'y',text:'느림 + 낮은 참여',showarrow:false,font:{color:'#e74c3c',size:9},xanchor:'right'},{x:mR,y:115,xref:'x',yref:'y',text:'중간값 '+fmtH(mR),showarrow:false,font:{color:'#666',size:9}}]}),cfg);
+             }
+           };
+           renderCh9Saved();
+         })();
+         <\/script>`
+      : `<div style="padding:20px;color:#888;text-align:center">리뷰어 산점도 (데이터 없음)</div>`;
 
     const since = $('since').value, until = $('until').value;
     const subtitle = $('subtitle').textContent;
@@ -949,7 +1238,7 @@ async function saveHtml() {
       <div class="grid2">${boxDiv('ch2')}${boxDiv('ch3')}</div>
       <div class="grid3">${boxDiv('ch4')}${boxDiv('ch5')}${boxDiv('ch6')}</div>
       <div class="grid2">${boxDiv('ch7')}<div class="box">${ch8Html}</div></div>
-      <div class="grid2"><div class="box full">${imgTag('ch9')}</div></div>
+      <div class="grid2"><div class="box full">${ch9Html}</div></div>
     `;
 
     const saveDate = new Date().toLocaleString('ko-KR');
@@ -993,10 +1282,53 @@ async function saveHtml() {
       + '<div id="tbl">\n'
       + '  <h2>리뷰어 상세 통계</h2>\n'
       + '  <table><thead><tr>'
-      + '<th>리뷰어</th><th>PR 생성</th><th>리뷰 참여</th><th>참여율</th>'
-      + '<th>평균 응답시간</th><th>평균 승인시간</th><th>중간값 응답시간</th><th>리뷰한 PR</th>'
+      + '<th>리뷰어</th><th>PR 생성</th><th>요청받은 PR</th><th>리뷰 참여</th><th>참여율</th>'
+      + '<th>평균 응답시간</th><th>최장 응답시간</th>'
       + '</tr></thead><tbody>' + tbodyHtml + '</tbody></table>\n'
-      + '</div>\n</body></html>';
+      + '</div>\n'
+      + `<div style="background:#1a1d2e;border:1px solid #2a2d3e;border-radius:9px;padding:16px;margin-top:14px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+    <h2 style="font-size:.88rem;white-space:nowrap">PR 응답 목록</h2>
+    <select id="prd-sel"
+      style="background:#0f1117;border:1px solid #2a2d3e;color:#e0e0e0;border-radius:6px;padding:4px 8px;font-size:.82rem"
+      onchange="renderPRD()">
+      ${CHART_ROWS.map(r=>`<option value="${r.login}">${r.login}</option>`).join('')}
+    </select>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div>
+      <div style="font-size:.75rem;color:#2ecc71;font-weight:600;margin-bottom:6px">응답한 PR (<span id="prd-rc">0</span>)</div>
+      <div id="prd-rl" style="display:flex;flex-direction:column;gap:3px;max-height:320px;overflow-y:auto"></div>
+    </div>
+    <div>
+      <div style="font-size:.75rem;color:#e74c3c;font-weight:600;margin-bottom:6px">응답하지 않은 PR (<span id="prd-nc">0</span>)</div>
+      <div id="prd-nl" style="display:flex;flex-direction:column;gap:3px;max-height:320px;overflow-y:auto"></div>
+    </div>
+  </div>
+  <div style="font-size:.72rem;color:#555;margin-top:10px">응답하지 않은 PR은 소요시간에 합계 되지 않습니다.</div>
+</div>
+<script>
+(function(){
+  const USTATS=${ch9Ustats};
+  function prItem(p,color){
+    const url='https://github.com/'+p.repo+'/pull/'+p.number;
+    return '<div style="padding:4px 8px;background:#0f1117;border-radius:5px;font-size:.78rem">'
+      +'<a href="'+url+'" target="_blank" rel="noopener" style="color:'+color+';text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="#'+p.number+' '+p.title.replace(/"/g,'&quot;')+'">'
+      +'<span style="color:#555;margin-right:4px">#'+p.number+'</span>'+p.title
+      +'</a></div>';
+  }
+  window.renderPRD=function(){
+    const login=document.getElementById('prd-sel').value;
+    const u=USTATS[login]||{respT:[],noRespT:[]};
+    document.getElementById('prd-rc').textContent=u.respT.length;
+    document.getElementById('prd-nc').textContent=u.noRespT.length;
+    document.getElementById('prd-rl').innerHTML=u.respT.length?u.respT.map(p=>prItem(p,'#c8e6c9')).join(''):'<div style="font-size:.75rem;color:#555;padding:4px 8px">없음</div>';
+    document.getElementById('prd-nl').innerHTML=u.noRespT.length?u.noRespT.map(p=>prItem(p,'#ffcdd2')).join(''):'<div style="font-size:.75rem;color:#555;padding:4px 8px">없음</div>';
+  };
+  renderPRD();
+})();
+<\/script>`
+      + '\n</body></html>';
 
     const a = document.createElement('a');
     const fname = `pr-stats_${(since||'all').replace(/-/g,'')}_${(until||'today').replace(/-/g,'')}.html`;
@@ -1067,7 +1399,8 @@ function computeStats() {
   const selected = new Set(getSelectedUsers());
 
   const uStats = {};
-  selected.forEach(l => { uStats[l]={pr_count:0,requested:0,participated:0,respT:[],apprT:[],prs:new Set()}; });
+  selected.forEach(l => { uStats[l]={pr_count:0,requested:0,participated:0,respT:[],noRespT:[],apprT:[],prs:new Set()}; });
+  // respT 요소: {h, number, title} / noRespT 요소: {number, title}
 
   const prs = [];
   for (const pr of RAW) {
@@ -1087,8 +1420,12 @@ function computeStats() {
         u.requested++;
         if (ev.first_reviewed_at) {
           u.participated++;
-          const rt = diffH(ev.requested_at, ev.first_reviewed_at);
-          if (rt!=null) u.respT.push(rt);
+          for (const pair of (ev.req_resp_pairs || [])) {
+            const rt = diffH(pair.requested_at, pair.reviewed_at);
+            if (rt != null) u.respT.push({h: rt, number: pr.number, title: pr.title, repo: pr.repo});
+          }
+        } else {
+          u.noRespT.push({number: pr.number, title: pr.title, repo: pr.repo});
         }
         if (ev.first_approved_at) { const at=diffH(ev.requested_at,ev.first_approved_at); if(at!=null) u.apprT.push(at); }
       } else if (ev.first_reviewed_at) { u.participated++; }
@@ -1109,12 +1446,14 @@ function computeStats() {
 
   const rows = Object.entries(uStats).map(([l,s])=>({
     login:l, pr_count:s.pr_count, participated:s.participated, requested:s.requested,
-    // 본인이 만든 PR은 리뷰 불가 → authored PR도 분자·분모에 포함해 참여율 산정
-    part_rate: (s.requested+s.pr_count)>0 ? (s.participated+s.pr_count)/(s.requested+s.pr_count)*100 : 0,
-    avg_resp: avg(s.respT), med_resp: median(s.respT), avg_appr: avg(s.apprT),
+    part_rate: s.requested>0 ? s.participated/s.requested*100 : 0,
+    avg_resp: avg(s.respT.map(r=>r.h)), max_resp: s.respT.length ? Math.max(...s.respT.map(r=>r.h)) : null, avg_appr: avg(s.apprT),
     prs_reviewed: s.prs.size,
   })).sort((a,b)=>b.participated-a.participated);
 
+  CHART_ROWS = rows;
+  CHART_USTATS = uStats;
+  updatePrDetailSelect();
   return {rows, prs};
 }
 
@@ -1175,12 +1514,11 @@ function render() {
   const rtR=[...rows].filter(r=>r.avg_resp!=null).sort((a,b)=>a.avg_resp-b.avg_resp), rtL=rtR.map(r=>r.login);
   Plotly.react('ch3',[
     {type:'bar',name:'평균 응답',x:rtL,y:rtR.map(r=>r.avg_resp),marker:{color:'#9b59b6'},text:rtR.map(r=>fmtH(r.avg_resp)),textposition:'auto'},
-    {type:'scatter',name:'평균 승인',x:rtL,y:rtR.map(r=>r.avg_appr),mode:'markers+lines',marker:{size:8,color:'#e67e22'},line:{color:'#e67e22'}},
-  ],lo(340,{title:{text:'응답 / 승인 시간',font:{color:'#e0e0e0',size:12}}}),cfg);
+  ],lo(340,{title:{text:'평균 응답 시간',font:{color:'#e0e0e0',size:12}}}),cfg);
 
   const rH=rtPRs.map(p=>p.time_to_first_review_h);
   const rL=lo(300,{title:{text:'첫 리뷰 응답시간 분포',font:{color:'#e0e0e0',size:12}},xaxis:{title:'h',gridcolor:'#2a2d3e',color:'#888'},yaxis:{title:'PR수',gridcolor:'#2a2d3e',color:'#888'}});
-  if(rH.length) vline(rL,median(rH),`중간값: ${fmtH(median(rH))}`);
+
   Plotly.react('ch4',[{type:'histogram',x:rH,nbinsx:20,marker:{color:'#f39c12'}}],rL,cfg);
 
   const mH=merged.map(p=>p.time_to_merge_h/24);
@@ -1208,56 +1546,15 @@ function render() {
     lo(320,{title:{text:'코드 변경량 vs 머지 소요시간',font:{color:'#e0e0e0',size:12}},
              xaxis:{title:'변경 라인',gridcolor:'#2a2d3e',color:'#888'},yaxis:{title:'머지 소요(일)',gridcolor:'#2a2d3e',color:'#888'}}),cfg);
 
-  // ── 산점도: 응답시간 vs 참여율 (naver/pr-stats 스타일)
-  const scRows = rows.filter(r => r.avg_resp != null && r.requested > 0);
-  if (scRows.length >= 2) {
-    const xs = scRows.map(r => r.avg_resp);
-    const ys = scRows.map(r => r.part_rate);
-    const medResp = median(xs);
-    const medPart = median(ys);
-    const xMax = Math.max(...xs) * 1.15 || 1;
-    const scColors = scRows.map(r =>
-      r.avg_resp <= medResp && r.part_rate >= medPart ? '#2ecc71' :
-      r.avg_resp >  medResp && r.part_rate >= medPart ? '#e67e22' :
-      r.avg_resp <= medResp && r.part_rate <  medPart ? '#3498db' :
-      '#e74c3c'
-    );
-    const scLayout = lo(420, {
-      title: {text: '리뷰어 산점도: 응답시간 vs 참여율', font: {color: '#e0e0e0', size: 12}},
-      xaxis: {title: '평균 응답시간 (h)', gridcolor: '#2a2d3e', color: '#888', rangemode: 'tozero'},
-      yaxis: {title: '참여율 (%)', range: [-5, 115], gridcolor: '#2a2d3e', color: '#888'},
-      shapes: [
-        {type:'line',x0:medResp,x1:medResp,y0:-5,y1:115,line:{color:'#444',dash:'dot',width:1.2}},
-        {type:'line',x0:0,x1:xMax,y0:medPart,y1:medPart,line:{color:'#444',dash:'dot',width:1.2}},
-      ],
-      annotations: [
-        {x:0,    y:115, xref:'paper', yref:'y', text:'빠름 + 높은 참여',  showarrow:false, font:{color:'#2ecc71',size:9}, xanchor:'left'},
-        {x:1,    y:115, xref:'paper', yref:'y', text:'느림 + 높은 참여',  showarrow:false, font:{color:'#e67e22',size:9}, xanchor:'right'},
-        {x:0,    y:-2,  xref:'paper', yref:'y', text:'빠름 + 낮은 참여',  showarrow:false, font:{color:'#3498db',size:9}, xanchor:'left'},
-        {x:1,    y:-2,  xref:'paper', yref:'y', text:'느림 + 낮은 참여',  showarrow:false, font:{color:'#e74c3c',size:9}, xanchor:'right'},
-        {x:medResp, y:115, xref:'x', yref:'y', text:`중간값 ${fmtH(medResp)}`, showarrow:false, font:{color:'#666',size:9}, yshift:0},
-      ],
-      margin: {l:52, r:20, t:48, b:56},
-    });
-    Plotly.react('ch9', [{
-      type:'scatter', mode:'markers+text',
-      x: xs, y: ys,
-      text: scRows.map(r => r.login),
-      textposition: 'top center',
-      textfont: {size: 10, color: '#e0e0e0'},
-      marker: {size: 13, color: scColors, line: {color: '#0f1117', width: 1.5}, opacity: 0.9},
-      hovertemplate: '<b>%{text}</b><br>응답시간: %{x:.1f}h<br>참여율: %{y:.1f}%<extra></extra>',
-    }], scLayout, cfg);
-  } else {
-    $('ch9').innerHTML = '';
-  }
+  // ── 산점도: 응답시간 vs 참여율
+  renderCh9();
 
   $('tbody').innerHTML=rows.map(r=>{
     const p=r.part_rate, c=p>=80?'#2ecc71':p>=50?'#e67e22':'#e74c3c';
-    return `<tr><td><strong>${r.login}</strong></td><td>${r.pr_count}</td><td>${r.participated}</td>
+    return `<tr><td><strong>${r.login}</strong></td><td>${r.pr_count}</td><td>${r.requested}</td><td>${r.participated}</td>
       <td><span class="badge" style="background:${c}22;color:${c}">${p.toFixed(0)}%</span></td>
-      <td style="color:#9b59b6">${fmtH(r.avg_resp)}</td><td style="color:#e67e22">${fmtH(r.avg_appr)}</td>
-      <td>${fmtH(r.med_resp)}</td><td>${r.prs_reviewed}</td></tr>`;
+      <td style="color:#9b59b6">${fmtH(r.avg_resp)}</td>
+      <td style="color:#e74c3c">${fmtH(r.max_resp)}</td></tr>`;
   }).join('');
 }
 
@@ -1369,7 +1666,7 @@ dpBuild('until');
   dpSetVal('since', twoWeeksAgo);
   dpSetVal('until', today);
 })();
-// (repos and members are populated via UI)
+loadConfig();
 </script>
 </body>
 </html>"""

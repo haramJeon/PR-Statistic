@@ -632,12 +632,16 @@ tr:hover td{background:#1e2130}
   </div>
   <hr class="sep">
 
-  <div style="margin-top:auto">
+  <div style="margin-top:auto;display:flex;flex-direction:column;gap:6px">
     <button class="btn btn-primary" id="btn-analyze" onclick="startAnalysis()"
       style="width:100%;height:auto">
       분석 시작
     </button>
-    <div style="font-size:.68rem;color:#444;margin-top:8px" id="footer"></div>
+    <button class="btn" id="btn-save" onclick="saveHtml()" disabled
+      style="width:100%">
+      결과 저장 (HTML)
+    </button>
+    <div style="font-size:.68rem;color:#444;margin-top:2px" id="footer"></div>
   </div>
 </div>
 
@@ -856,6 +860,116 @@ function resetBtn() {
   $('btn-analyze').textContent = '분석 시작';
 }
 
+async function saveHtml() {
+  const btn = $('btn-save');
+  btn.disabled = true;
+  btn.textContent = '저장 중...';
+
+  try {
+    // 모든 Plotly 차트를 SVG 이미지로 변환
+    const chartIds = ['ch1','ch2','ch3','ch4','ch5','ch6','ch7','ch8','ch9'];
+    const chartImgs = {};
+    for (const id of chartIds) {
+      const el = $(id);
+      if (el && el.querySelector('.plotly')) {
+        try {
+          chartImgs[id] = await Plotly.toImage(el, {format:'svg', width:el.offsetWidth||800, height:el.offsetHeight||400});
+        } catch(e) { chartImgs[id] = null; }
+      }
+    }
+
+    const since = $('since').value, until = $('until').value;
+    const subtitle = $('subtitle').textContent;
+    const cardsHtml = $('cards').innerHTML;
+    const tbodyHtml = $('tbody').innerHTML;
+
+    // 차트 div를 img 태그로 교체한 results 섹션 구성
+    let chartSection = '';
+    const chartTitles = {
+      ch1:'리뷰 참여 수 vs PR 생성 수', ch2:'참여율', ch3:'응답 / 승인 시간',
+      ch4:'첫 리뷰 응답시간 분포', ch5:'머지 소요시간', ch6:'리뷰 후 머지까지',
+      ch7:'월별 머지 PR', ch8:'코드 변경량 vs 머지 소요시간', ch9:'리뷰어 산점도: 응답시간 vs 참여율'
+    };
+    const grid1 = ['ch1'];
+    const grid2a = ['ch2','ch3'];
+    const grid3  = ['ch4','ch5','ch6'];
+    const grid2b = ['ch7','ch8'];
+    const grid2c = ['ch9'];
+
+    function imgTag(id) {
+      if (!chartImgs[id]) return `<div style="padding:20px;color:#888;text-align:center">${chartTitles[id]||id} (데이터 없음)</div>`;
+      return `<img src="${chartImgs[id]}" style="width:100%;display:block">`;
+    }
+    function boxDiv(id) { return `<div class="box">${imgTag(id)}</div>`; }
+
+    chartSection = `
+      <div class="grid2"><div class="box full">${imgTag('ch1')}</div></div>
+      <div class="grid2">${boxDiv('ch2')}${boxDiv('ch3')}</div>
+      <div class="grid3">${boxDiv('ch4')}${boxDiv('ch5')}${boxDiv('ch6')}</div>
+      <div class="grid2">${boxDiv('ch7')}${boxDiv('ch8')}</div>
+      <div class="grid2"><div class="box full">${imgTag('ch9')}</div></div>
+    `;
+
+    const saveDate = new Date().toLocaleString('ko-KR');
+    const repoNames = REPOS.map(r=>r.name).join(', ');
+
+    const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PR Stats – ${since||'전체'} ~ ${until||'오늘'}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f1117;--card:#1a1d2e;--border:#2a2d3e;--text:#e0e0e0;--muted:#888;--accent:#3498db;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:28px 32px}
+h1{font-size:1.35rem;font-weight:700;margin-bottom:4px}
+.sub{font-size:.82rem;color:var(--muted);margin-bottom:4px}
+.meta{font-size:.74rem;color:#555;margin-bottom:22px}
+#cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:20px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:13px;text-align:center}
+.cval{font-size:1.45rem;font-weight:700}.clbl{font-size:.7rem;color:var(--muted);margin-top:3px}.csub{font-size:.67rem;color:#555;margin-top:2px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.full{grid-column:1/-1}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
+.box{background:var(--card);border:1px solid var(--border);border-radius:9px;overflow:hidden}
+#tbl{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:16px;margin-bottom:14px}
+#tbl h2{font-size:.88rem;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+th{background:var(--bg);color:var(--muted);text-align:left;padding:6px 9px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:6px 9px;border-bottom:1px solid #1e2130}
+tr:hover td{background:#1e2130}
+.badge{display:inline-block;padding:1px 6px;border-radius:99px;font-size:.72rem;font-weight:600}
+@media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}.full{grid-column:1}}
+</style>
+</head>
+<body>
+<h1>PR Reviewer Statistics</h1>
+<div class="sub">${subtitle}</div>
+<div class="meta">저장소: ${repoNames} &nbsp;|&nbsp; 저장일시: ${saveDate}</div>
+<div id="cards">${cardsHtml}</div>
+${chartSection}
+<div id="tbl">
+  <h2>리뷰어 상세 통계</h2>
+  <table><thead><tr>
+    <th>리뷰어</th><th>PR 생성</th><th>리뷰 참여</th><th>참여율</th>
+    <th>평균 응답시간</th><th>평균 승인시간</th><th>중간값 응답시간</th><th>리뷰한 PR</th>
+  </tr></thead><tbody>${tbodyHtml}</tbody></table>
+</div>
+</body></html>`;
+
+    const a = document.createElement('a');
+    const fname = `pr-stats_${(since||'all').replace(/-/g,'')}_${(until||'today').replace(/-/g,'')}.html`;
+    a.href = URL.createObjectURL(new Blob([html], {type:'text/html;charset=utf-8'}));
+    a.download = fname;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '결과 저장 (HTML)';
+  }
+}
+
 function connectSSE() {
   es = new EventSource('/stream');
 
@@ -894,7 +1008,7 @@ function connectSSE() {
     $('ptxt').textContent = `완료! ${d.total}개 PR 분석 (API ${d.api_count}회)`;
     $('footer').textContent = `API ${d.api_count}회`;
     setTimeout(() => $('progress-wrap').style.display='none', 2000);
-    render(); resetBtn();
+    render(); resetBtn(); $('btn-save').disabled = false;
     es.close(); es = null;
   });
 

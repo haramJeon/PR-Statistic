@@ -708,7 +708,22 @@ const fmtH = h => {
 };
 const avg = a => a.length ? a.reduce((s,v)=>s+v,0)/a.length : null;
 const median = a => { if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); return s[Math.floor(s.length/2)]; };
-const diffH = (a,b) => { if(!a||!b) return null; const d=(new Date(b)-new Date(a))/3600000; return d>=0?d:null; };
+// 주말(토·일) 제외 실제 영업시간 차이(h) 계산
+const diffH = (a, b) => {
+  if (!a || !b) return null;
+  const start = new Date(a), end = new Date(b);
+  if (end <= start) return null;
+  let hours = 0;
+  const cur = new Date(start);
+  while (cur < end) {
+    const slotEnd = new Date(Math.min(cur.getTime() + 3600000, end.getTime()));
+    if (cur.getDay() !== 0 && cur.getDay() !== 6) {
+      hours += (slotEnd - cur) / 3600000;
+    }
+    cur.setTime(slotEnd.getTime());
+  }
+  return hours;
+};
 
 // ── Repo management
 // REPOS: [{name, count}]

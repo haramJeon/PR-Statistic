@@ -922,51 +922,48 @@ async function saveHtml() {
     const saveDate = new Date().toLocaleString('ko-KR');
     const repoNames = REPOS.map(r=>r.name).join(', ');
 
-    const html = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PR Stats – ${since||'전체'} ~ ${until||'오늘'}</title>
-<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0f1117;--card:#1a1d2e;--border:#2a2d3e;--text:#e0e0e0;--muted:#888;--accent:#3498db;}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:28px 32px}
-h1{font-size:1.35rem;font-weight:700;margin-bottom:4px}
-.sub{font-size:.82rem;color:var(--muted);margin-bottom:4px}
-.meta{font-size:.74rem;color:#555;margin-bottom:22px}
-#cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:20px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:13px;text-align:center}
-.cval{font-size:1.45rem;font-weight:700}.clbl{font-size:.7rem;color:var(--muted);margin-top:3px}.csub{font-size:.67rem;color:#555;margin-top:2px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
-.full{grid-column:1/-1}
-.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
-.box{background:var(--card);border:1px solid var(--border);border-radius:9px;overflow:hidden}
-#tbl{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:16px;margin-bottom:14px}
-#tbl h2{font-size:.88rem;margin-bottom:10px}
-table{width:100%;border-collapse:collapse;font-size:.8rem}
-th{background:var(--bg);color:var(--muted);text-align:left;padding:6px 9px;border-bottom:1px solid var(--border);white-space:nowrap}
-td{padding:6px 9px;border-bottom:1px solid #1e2130}
-tr:hover td{background:#1e2130}
-.badge{display:inline-block;padding:1px 6px;border-radius:99px;font-size:.72rem;font-weight:600}
-@media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}.full{grid-column:1}}
-</style>
-</head>
-<body>
-<h1>PR Reviewer Statistics</h1>
-<div class="sub">${subtitle}</div>
-<div class="meta">저장소: ${repoNames} &nbsp;|&nbsp; 저장일시: ${saveDate}</div>
-<div id="cards">${cardsHtml}</div>
-${chartSection}
-<div id="tbl">
-  <h2>리뷰어 상세 통계</h2>
-  <table><thead><tr>
-    <th>리뷰어</th><th>PR 생성</th><th>리뷰 참여</th><th>참여율</th>
-    <th>평균 응답시간</th><th>평균 승인시간</th><th>중간값 응답시간</th><th>리뷰한 PR</th>
-  </tr></thead><tbody>${tbodyHtml}</tbody></table>
-</div>
-</body></html>`;
+    const staticHead = '<!DOCTYPE html>\n<html lang="ko">\n<head>\n'
+      + '<meta charset="UTF-8">\n'
+      + '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+      + '<title>PR Stats</title>\n'
+      + '<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"><\/script>\n'
+      + '<style>\n'
+      + '*{box-sizing:border-box;margin:0;padding:0}\n'
+      + ':root{--bg:#0f1117;--card:#1a1d2e;--border:#2a2d3e;--text:#e0e0e0;--muted:#888;--accent:#3498db;}\n'
+      + 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:28px 32px}\n'
+      + 'h1{font-size:1.35rem;font-weight:700;margin-bottom:4px}\n'
+      + '.sub{font-size:.82rem;color:var(--muted);margin-bottom:4px}\n'
+      + '.meta{font-size:.74rem;color:#555;margin-bottom:22px}\n'
+      + '#cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:20px}\n'
+      + '.card{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:13px;text-align:center}\n'
+      + '.cval{font-size:1.45rem;font-weight:700}.clbl{font-size:.7rem;color:var(--muted);margin-top:3px}.csub{font-size:.67rem;color:#555;margin-top:2px}\n'
+      + '.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}\n'
+      + '.full{grid-column:1/-1}\n'
+      + '.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}\n'
+      + '.box{background:var(--card);border:1px solid var(--border);border-radius:9px;overflow:hidden}\n'
+      + '#tbl{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:16px;margin-bottom:14px}\n'
+      + '#tbl h2{font-size:.88rem;margin-bottom:10px}\n'
+      + 'table{width:100%;border-collapse:collapse;font-size:.8rem}\n'
+      + 'th{background:var(--bg);color:var(--muted);text-align:left;padding:6px 9px;border-bottom:1px solid var(--border);white-space:nowrap}\n'
+      + 'td{padding:6px 9px;border-bottom:1px solid #1e2130}\n'
+      + 'tr:hover td{background:#1e2130}\n'
+      + '.badge{display:inline-block;padding:1px 6px;border-radius:99px;font-size:.72rem;font-weight:600}\n'
+      + '@media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}.full{grid-column:1}}\n'
+      + '</style>\n</head>\n<body>\n';
+
+    const html = staticHead
+      + '<h1>PR Reviewer Statistics</h1>\n'
+      + '<div class="sub">' + subtitle + '</div>\n'
+      + '<div class="meta">저장소: ' + repoNames + ' &nbsp;|&nbsp; 저장일시: ' + saveDate + '</div>\n'
+      + '<div id="cards">' + cardsHtml + '</div>\n'
+      + chartSection
+      + '<div id="tbl">\n'
+      + '  <h2>리뷰어 상세 통계</h2>\n'
+      + '  <table><thead><tr>'
+      + '<th>리뷰어</th><th>PR 생성</th><th>리뷰 참여</th><th>참여율</th>'
+      + '<th>평균 응답시간</th><th>평균 승인시간</th><th>중간값 응답시간</th><th>리뷰한 PR</th>'
+      + '</tr></thead><tbody>' + tbodyHtml + '</tbody></table>\n'
+      + '</div>\n</body></html>';
 
     const a = document.createElement('a');
     const fname = `pr-stats_${(since||'all').replace(/-/g,'')}_${(until||'today').replace(/-/g,'')}.html`;

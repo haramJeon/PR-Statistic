@@ -866,8 +866,8 @@ async function saveHtml() {
   btn.textContent = '저장 중...';
 
   try {
-    // 모든 Plotly 차트를 SVG 이미지로 변환
-    const chartIds = ['ch1','ch2','ch3','ch4','ch5','ch6','ch7','ch8','ch9'];
+    // ch8 제외 나머지 차트를 SVG 이미지로 변환
+    const chartIds = ['ch1','ch2','ch3','ch4','ch5','ch6','ch7','ch9'];
     const chartImgs = {};
     for (const id of chartIds) {
       const el = $(id);
@@ -877,6 +877,15 @@ async function saveHtml() {
         } catch(e) { chartImgs[id] = null; }
       }
     }
+
+    // ch8: hover 인터랙션 보존을 위해 Plotly 데이터/레이아웃 JSON으로 직렬화
+    const ch8el = $('ch8');
+    const ch8Data   = (ch8el && ch8el.data)   ? JSON.stringify(ch8el.data)   : 'null';
+    const ch8Layout = (ch8el && ch8el.layout)  ? JSON.stringify(ch8el.layout) : 'null';
+    const ch8Html = ch8Data !== 'null'
+      ? `<div id="ch8-saved" style="width:100%;height:320px"></div>
+         <script>Plotly.newPlot('ch8-saved',${ch8Data},Object.assign(${ch8Layout},{paper_bgcolor:'#1a1d2e',plot_bgcolor:'#1a1d2e'}),{responsive:true,displayModeBar:false})<\/script>`
+      : `<div style="padding:20px;color:#888;text-align:center">코드 변경량 vs 머지 소요시간 (데이터 없음)</div>`;
 
     const since = $('since').value, until = $('until').value;
     const subtitle = $('subtitle').textContent;
@@ -906,7 +915,7 @@ async function saveHtml() {
       <div class="grid2"><div class="box full">${imgTag('ch1')}</div></div>
       <div class="grid2">${boxDiv('ch2')}${boxDiv('ch3')}</div>
       <div class="grid3">${boxDiv('ch4')}${boxDiv('ch5')}${boxDiv('ch6')}</div>
-      <div class="grid2">${boxDiv('ch7')}${boxDiv('ch8')}</div>
+      <div class="grid2">${boxDiv('ch7')}<div class="box">${ch8Html}</div></div>
       <div class="grid2"><div class="box full">${imgTag('ch9')}</div></div>
     `;
 
@@ -919,6 +928,7 @@ async function saveHtml() {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PR Stats – ${since||'전체'} ~ ${until||'오늘'}</title>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0f1117;--card:#1a1d2e;--border:#2a2d3e;--text:#e0e0e0;--muted:#888;--accent:#3498db;}

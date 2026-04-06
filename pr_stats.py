@@ -120,7 +120,8 @@ class GitHubClient:
                 sys.exit(1)
             raise
 
-    def paginate(self, path, params=None, max_items=None):
+    def paginate(self, path, params=None, max_items=None, stop_before=None):
+        """stop_before: datetime — 이 시각보다 오래된 항목이 나오면 조기 종료."""
         params = dict(params or {})
         params["per_page"] = 100
         items, page = [], 1
@@ -129,9 +130,19 @@ class GitHubClient:
             data = self.get(path, params)
             if not data:
                 break
-            items.extend(data)
-            if max_items and len(items) >= max_items:
-                return items[:max_items]
+            if stop_before:
+                filtered = []
+                for item in data:
+                    if parse_dt(item.get("created_at")) >= stop_before:
+                        filtered.append(item)
+                    else:
+                        items.extend(filtered)
+                        return items
+                items.extend(filtered)
+            else:
+                items.extend(data)
+                if max_items and len(items) >= max_items:
+                    return items[:max_items]
             if len(data) < 100:
                 break
             page += 1
@@ -205,21 +216,28 @@ def fetch_worker(store, client, repos, state, max_prs,
             # ── 1. PR 목록 (빠름)
             print(f"[1] {repo_full} PR 목록 가져오는 중 ...")
             try:
-                prs_raw = client.paginate(
-                    f"/repos/{owner}/{repo}/pulls",
-                    {"state": state, "sort": "created", "direction": "desc"},
-                    max_prs,
-                )
+                if since_dt:
+                    # 날짜 지정 시 max_prs 제한 없이 since_dt 이전 PR에서 자동 종료
+                    prs_raw = client.paginate(
+                        f"/repos/{owner}/{repo}/pulls",
+                        {"state": state, "sort": "created", "direction": "desc"},
+                        stop_before=since_dt,
+                    )
+                else:
+                    prs_raw = client.paginate(
+                        f"/repos/{owner}/{repo}/pulls",
+                        {"state": state, "sort": "created", "direction": "desc"},
+                        max_prs,
+                    )
             except urllib.error.HTTPError as e:
                 store.fail(f"저장소 접근 실패: {repo_full} (HTTP {e.code})")
                 return
 
-            # 날짜 필터
-            if since_dt or until_dt:
+            # until 필터 (since는 paginate에서 처리됨)
+            if until_dt:
                 prs_raw = [
                     pr for pr in prs_raw
-                    if (not since_dt or parse_dt(pr["created_at"]) >= since_dt)
-                    and (not until_dt or parse_dt(pr["created_at"]) <= until_dt)
+                    if parse_dt(pr["created_at"]) <= until_dt
                 ]
 
             print(f"  → {len(prs_raw)}개 PR (날짜 필터 후)")

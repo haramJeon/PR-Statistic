@@ -515,10 +515,18 @@ input:focus{outline:none;border-color:var(--accent)}
 .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 .btn-primary:hover{background:#2980b9}
 .btn-primary:disabled{background:#2a2d3e;border-color:#2a2d3e;color:#555;cursor:not-allowed}
-#member-list{display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto}
+#member-list{display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto}
 .mitem{display:flex;align-items:center;gap:7px;padding:4px 7px;border-radius:5px;font-size:.83rem;cursor:pointer}
 .mitem:hover{background:#22263a}
 .mitem input{width:14px;height:14px;accent-color:var(--accent)}
+#sel-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:0}
+#sel-chips:empty{display:none}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 9px;
+  background:#22263a;border:1px solid var(--border);border-radius:99px;
+  font-size:.73rem;color:var(--text);white-space:nowrap}
+.chip-x{background:none;border:none;color:var(--muted);cursor:pointer;
+  font-size:.8rem;line-height:1;padding:0;margin-left:1px}
+.chip-x:hover{color:var(--red)}
 #main{flex:1;padding:26px 30px;overflow-x:hidden;min-width:0}
 #header{margin-bottom:18px}
 #header h1{font-size:1.35rem;font-weight:700}
@@ -620,6 +628,7 @@ tr:hover td{background:#1e2130}
       <button class="btn" onclick="selAll(false)">해제</button>
     </div>
     <div id="member-list"></div>
+    <div id="sel-chips"></div>
   </div>
   <hr class="sep">
 
@@ -760,6 +769,21 @@ function renderRepoList() {
 }
 
 // ── Member list
+function updateSelChips() {
+  const chips = $('sel-chips');
+  chips.innerHTML = '';
+  $('member-list').querySelectorAll('input:checked').forEach(cb => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = `${cb.value}<button class="chip-x" title="선택 해제">✕</button>`;
+    chip.querySelector('.chip-x').addEventListener('click', () => {
+      cb.checked = false;
+      updateSelChips();
+    });
+    chips.appendChild(chip);
+  });
+}
+
 function rebuildMembers(logins) {
   const list = $('member-list');
   const existing = new Set([...list.querySelectorAll('input')].map(i=>i.value));
@@ -769,12 +793,15 @@ function rebuildMembers(logins) {
     d.className = 'mitem';
     d.innerHTML = `<input type="checkbox" id="cb-${login}" value="${login}" checked>
                    <label for="cb-${login}" style="cursor:pointer">${login}</label>`;
+    d.querySelector('input').addEventListener('change', updateSelChips);
     list.appendChild(d);
   });
+  updateSelChips();
 }
 
 function selAll(v) {
   $('member-list').querySelectorAll('.mitem:not([style*="display:none"]) input').forEach(cb => cb.checked = v);
+  updateSelChips();
 }
 
 function filterMembers(q) {

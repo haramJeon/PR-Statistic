@@ -990,7 +990,7 @@ function render() {
   const avgM = avg(merged.map(p=>p.time_to_merge_h));
   const avgR = avg(rtPRs.map(p=>p.time_to_first_review_h));
   const avgP = avg(rows.map(r=>r.part_rate));
-  const top  = rows[0];
+  const top  = [...rows].sort((a,b)=>(b.participated+b.pr_count)-(a.participated+a.pr_count))[0];
   const fast = [...rows].filter(r=>r.avg_resp!=null).sort((a,b)=>a.avg_resp-b.avg_resp)[0];
   $('cards').innerHTML = [
     {l:'전체 PR',v:`${prs.length}개`,s:'',c:'#3498db'},
@@ -998,7 +998,7 @@ function render() {
     {l:'평균 머지 소요',v:fmtH(avgM),s:'',c:'#9b59b6'},
     {l:'첫 리뷰 응답',v:fmtH(avgR),s:'',c:'#e67e22'},
     {l:'평균 참여율',v:avgP!=null?`${avgP.toFixed(0)}%`:'N/A',s:'',c:'#3498db'},
-    {l:'최다 리뷰어',v:top?.login||'-',s:`${top?.participated||0}건`,c:'#e74c3c'},
+    {l:'최다 리뷰어',v:top?.login||'-',s:`리뷰 ${top?.participated||0} + PR ${top?.pr_count||0}건`,c:'#e74c3c'},
     {l:'가장 빠른 리뷰어',v:fast?.login||'-',s:fmtH(fast?.avg_resp),c:'#1abc9c'},
   ].map(c=>`<div class="card"><div class="cval" style="color:${c.c}">${c.v}</div>
     <div class="clbl">${c.l}</div>${c.s?`<div class="csub">${c.s}</div>`:''}</div>`).join('');

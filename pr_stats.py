@@ -673,6 +673,7 @@ tr:hover td{background:#1e2130}
       <div class="box"><div id="ch7"></div></div>
       <div class="box"><div id="ch8"></div></div>
     </div>
+    <div class="grid2"><div class="box full"><div id="ch9"></div></div></div>
     <div id="tbl">
       <h2>리뷰어 상세 통계</h2>
       <table><thead><tr>
@@ -1051,6 +1052,50 @@ function render() {
     hovertemplate:'PR #%{customdata[0]}<br>%{customdata[1]}<br>변경: %{x:,}줄<br>머지: %{y:.1f}일<extra></extra>'}],
     lo(320,{title:{text:'코드 변경량 vs 머지 소요시간',font:{color:'#e0e0e0',size:12}},
              xaxis:{title:'변경 라인',gridcolor:'#2a2d3e',color:'#888'},yaxis:{title:'머지 소요(일)',gridcolor:'#2a2d3e',color:'#888'}}),cfg);
+
+  // ── 산점도: 응답시간 vs 참여율 (naver/pr-stats 스타일)
+  const scRows = rows.filter(r => r.avg_resp != null && r.requested > 0);
+  if (scRows.length >= 2) {
+    const xs = scRows.map(r => r.avg_resp);
+    const ys = scRows.map(r => r.part_rate);
+    const medResp = median(xs);
+    const medPart = median(ys);
+    const xMax = Math.max(...xs) * 1.15 || 1;
+    const scColors = scRows.map(r =>
+      r.avg_resp <= medResp && r.part_rate >= medPart ? '#2ecc71' :
+      r.avg_resp >  medResp && r.part_rate >= medPart ? '#e67e22' :
+      r.avg_resp <= medResp && r.part_rate <  medPart ? '#3498db' :
+      '#e74c3c'
+    );
+    const scLayout = lo(420, {
+      title: {text: '리뷰어 산점도: 응답시간 vs 참여율', font: {color: '#e0e0e0', size: 12}},
+      xaxis: {title: '평균 응답시간 (h)', gridcolor: '#2a2d3e', color: '#888', rangemode: 'tozero'},
+      yaxis: {title: '참여율 (%)', range: [-5, 115], gridcolor: '#2a2d3e', color: '#888'},
+      shapes: [
+        {type:'line',x0:medResp,x1:medResp,y0:-5,y1:115,line:{color:'#444',dash:'dot',width:1.2}},
+        {type:'line',x0:0,x1:xMax,y0:medPart,y1:medPart,line:{color:'#444',dash:'dot',width:1.2}},
+      ],
+      annotations: [
+        {x:0,    y:115, xref:'paper', yref:'y', text:'빠름 + 높은 참여',  showarrow:false, font:{color:'#2ecc71',size:9}, xanchor:'left'},
+        {x:1,    y:115, xref:'paper', yref:'y', text:'느림 + 높은 참여',  showarrow:false, font:{color:'#e67e22',size:9}, xanchor:'right'},
+        {x:0,    y:-2,  xref:'paper', yref:'y', text:'빠름 + 낮은 참여',  showarrow:false, font:{color:'#3498db',size:9}, xanchor:'left'},
+        {x:1,    y:-2,  xref:'paper', yref:'y', text:'느림 + 낮은 참여',  showarrow:false, font:{color:'#e74c3c',size:9}, xanchor:'right'},
+        {x:medResp, y:115, xref:'x', yref:'y', text:`중간값 ${fmtH(medResp)}`, showarrow:false, font:{color:'#666',size:9}, yshift:0},
+      ],
+      margin: {l:52, r:20, t:48, b:56},
+    });
+    Plotly.react('ch9', [{
+      type:'scatter', mode:'markers+text',
+      x: xs, y: ys,
+      text: scRows.map(r => r.login),
+      textposition: 'top center',
+      textfont: {size: 10, color: '#e0e0e0'},
+      marker: {size: 13, color: scColors, line: {color: '#0f1117', width: 1.5}, opacity: 0.9},
+      hovertemplate: '<b>%{text}</b><br>응답시간: %{x:.1f}h<br>참여율: %{y:.1f}%<extra></extra>',
+    }], scLayout, cfg);
+  } else {
+    $('ch9').innerHTML = '';
+  }
 
   $('tbody').innerHTML=rows.map(r=>{
     const p=r.part_rate, c=p>=80?'#2ecc71':p>=50?'#e67e22':'#e74c3c';

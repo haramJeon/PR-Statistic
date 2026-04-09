@@ -453,6 +453,35 @@ function renderCh9() {
       r.avg_resp <= medResp && r.part_rate <  medPart ? '#3498db' :
       '#e74c3c'
     );
+    const traces = [{
+      type:'scatter', mode:'markers+text',
+      x: xs, y: ys,
+      text: scRows.map(r => r.login),
+      textposition: 'top center',
+      textfont: {size: 10, color: '#e0e0e0'},
+      marker: {size: 13, color: scColors, line: {color: '#0f1117', width: 1.5}, opacity: 0.9},
+      hovertemplate: '<b>%{text}</b><br>응답시간: %{x:.1f}h<br>참여율: %{y:.1f}%<extra></extra>',
+    }];
+    // 밀도 분포 오버레이
+    const showContour = $('ch9-contour') && $('ch9-contour').checked;
+    if (showContour) {
+      const filteredRows = CHART_ROWS.filter(r => CHART_USTATS[r.login] && CHART_USTATS[r.login].respT.length);
+      if (filteredRows.length) {
+        const allX = filteredRows.flatMap(r => CHART_USTATS[r.login].respT.map(t => t.h));
+        const allY = filteredRows.flatMap(r => CHART_USTATS[r.login].respT.map(() => r.part_rate));
+        traces.unshift({
+          type: 'histogram2dcontour',
+          x: allX, y: allY,
+          showscale: false,
+          colorscale: [[0,'rgba(0,0,0,0)'],[1,'rgba(255,255,255,0.18)']],
+          ncontours: 8,
+          contours: {coloring: 'fill', showlabels: false},
+          line: {width: 0.8, color: 'rgba(255,255,255,0.25)'},
+          hoverinfo: 'skip',
+          showlegend: false,
+        });
+      }
+    }
     const scLayout = lo(420, {
       title: {text: '리뷰어 산점도: 평균 응답시간 vs 참여율', font: {color: '#e0e0e0', size: 12}},
       xaxis: {title: '평균 응답시간 (h)', gridcolor: '#2a2d3e', color: '#888', rangemode: 'tozero'},
@@ -471,15 +500,7 @@ function renderCh9() {
       ],
       margin: {l:52, r:20, t:48, b:56},
     });
-    Plotly.react('ch9', [{
-      type:'scatter', mode:'markers+text',
-      x: xs, y: ys,
-      text: scRows.map(r => r.login),
-      textposition: 'top center',
-      textfont: {size: 10, color: '#e0e0e0'},
-      marker: {size: 13, color: scColors, line: {color: '#0f1117', width: 1.5}, opacity: 0.9},
-      hovertemplate: '<b>%{text}</b><br>응답시간: %{x:.1f}h<br>참여율: %{y:.1f}%<extra></extra>',
-    }], scLayout, cfg);
+    Plotly.react('ch9', traces, scLayout, cfg);
   }
 }
 

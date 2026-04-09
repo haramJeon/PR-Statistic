@@ -1,0 +1,382 @@
+{
+  "repos": [
+    {
+      "name": "medit-desktop-app/applications",
+      "count": 72
+    },
+    {
+      "name": "medit-desktop-app/kernel",
+      "count": 72
+    },
+    {
+      "name": "medit-desktop-app/marc",
+      "count": 72
+    },
+    {
+      "name": "medit-desktop-app/medit-express",
+      "count": 73
+    },
+    {
+      "name": "medit-platform/cx-suite",
+      "count": 61
+    }
+  ],
+  "members": [
+    {
+      "login": "ChansikL",
+      "checked": true
+    },
+    {
+      "login": "Damiro-An",
+      "checked": true
+    },
+    {
+      "login": "DonghwaKang",
+      "checked": true
+    },
+    {
+      "login": "HsKimMdt",
+      "checked": true
+    },
+    {
+      "login": "Jihye-Shin11",
+      "checked": true
+    },
+    {
+      "login": "JonginChoe-Medit",
+      "checked": true
+    },
+    {
+      "login": "LeeChang-Min",
+      "checked": true
+    },
+    {
+      "login": "Medit-YongJoon",
+      "checked": true
+    },
+    {
+      "login": "MeditTaeHwan",
+      "checked": true
+    },
+    {
+      "login": "NohJongcheol",
+      "checked": true
+    },
+    {
+      "login": "SeongminHong-Medit",
+      "checked": true
+    },
+    {
+      "login": "SeoroSung",
+      "checked": true
+    },
+    {
+      "login": "SewonJeongMedit",
+      "checked": true
+    },
+    {
+      "login": "beomsiksuh",
+      "checked": true
+    },
+    {
+      "login": "bjlee2024",
+      "checked": true
+    },
+    {
+      "login": "bongwook",
+      "checked": true
+    },
+    {
+      "login": "byungjin-moon",
+      "checked": true
+    },
+    {
+      "login": "chaehyeonyou",
+      "checked": true
+    },
+    {
+      "login": "changjinjeong",
+      "checked": true
+    },
+    {
+      "login": "changmany",
+      "checked": true
+    },
+    {
+      "login": "cmook-mdt",
+      "checked": true
+    },
+    {
+      "login": "donghoseo-medit",
+      "checked": true
+    },
+    {
+      "login": "donghyeon-roh",
+      "checked": true
+    },
+    {
+      "login": "dongyeol-sin",
+      "checked": true
+    },
+    {
+      "login": "eunsangMEDIT",
+      "checked": true
+    },
+    {
+      "login": "hajongnam",
+      "checked": true
+    },
+    {
+      "login": "hanbyulchae",
+      "checked": true
+    },
+    {
+      "login": "haramJeon",
+      "checked": true
+    },
+    {
+      "login": "harinkang",
+      "checked": true
+    },
+    {
+      "login": "heeguen",
+      "checked": true
+    },
+    {
+      "login": "heejukim-medit",
+      "checked": true
+    },
+    {
+      "login": "hotaik-lee",
+      "checked": true
+    },
+    {
+      "login": "hwanghyeongha",
+      "checked": true
+    },
+    {
+      "login": "hyokyeonghyeon",
+      "checked": true
+    },
+    {
+      "login": "hyunbincho-medit",
+      "checked": true
+    },
+    {
+      "login": "hyunseokjung00",
+      "checked": true
+    },
+    {
+      "login": "inchanlee",
+      "checked": true
+    },
+    {
+      "login": "issacs",
+      "checked": true
+    },
+    {
+      "login": "jiyoungparki",
+      "checked": true
+    },
+    {
+      "login": "jongwoongbaek",
+      "checked": true
+    },
+    {
+      "login": "jungeun-song",
+      "checked": true
+    },
+    {
+      "login": "junhongcheon",
+      "checked": true
+    },
+    {
+      "login": "kangbin-lee",
+      "checked": true
+    },
+    {
+      "login": "kibaekkim-medit",
+      "checked": true
+    },
+    {
+      "login": "kiseyob-medit",
+      "checked": true
+    },
+    {
+      "login": "kyhwang0",
+      "checked": true
+    },
+    {
+      "login": "medit-github",
+      "checked": true
+    },
+    {
+      "login": "medit-hyunbukang",
+      "checked": true
+    },
+    {
+      "login": "medit-jooyonglee",
+      "checked": true
+    },
+    {
+      "login": "medit-minheecho",
+      "checked": true
+    },
+    {
+      "login": "medit-minkyo",
+      "checked": true
+    },
+    {
+      "login": "medit-seungheeko",
+      "checked": true
+    },
+    {
+      "login": "medit-yongdeokkim",
+      "checked": true
+    },
+    {
+      "login": "medit-youngmokcho",
+      "checked": true
+    },
+    {
+      "login": "medit-youngseokpark",
+      "checked": true
+    },
+    {
+      "login": "meditsbim",
+      "checked": true
+    },
+    {
+      "login": "mieunko-rnd1",
+      "checked": true
+    },
+    {
+      "login": "minchang-kim-medit",
+      "checked": true
+    },
+    {
+      "login": "myoungjin-sa",
+      "checked": true
+    },
+    {
+      "login": "sanghoonkim1",
+      "checked": true
+    },
+    {
+      "login": "sejin-lee-medit",
+      "checked": true
+    },
+    {
+      "login": "seonyaepark",
+      "checked": true
+    },
+    {
+      "login": "seunghwa-medit",
+      "checked": true
+    },
+    {
+      "login": "shinseunghak",
+      "checked": true
+    },
+    {
+      "login": "siyoon-bong",
+      "checked": true
+    },
+    {
+      "login": "soonwonjang",
+      "checked": true
+    },
+    {
+      "login": "sukhong",
+      "checked": true
+    },
+    {
+      "login": "taeksookim1289",
+      "checked": true
+    },
+    {
+      "login": "yerinchoDev2",
+      "checked": true
+    },
+    {
+      "login": "younghyunhan-medit",
+      "checked": true
+    },
+    {
+      "login": "yujinha1",
+      "checked": true
+    },
+    {
+      "login": "yunseyeong",
+      "checked": true
+    },
+    {
+      "login": "dongmikim1",
+      "checked": true
+    },
+    {
+      "login": "haezzzz",
+      "checked": true
+    },
+    {
+      "login": "GoeunGrace",
+      "checked": true
+    },
+    {
+      "login": "Medit-YoungminChoi",
+      "checked": true
+    },
+    {
+      "login": "cheng-li-medit",
+      "checked": true
+    },
+    {
+      "login": "eunhyekim-medit",
+      "checked": true
+    },
+    {
+      "login": "frontend-joonhyungcho",
+      "checked": true
+    },
+    {
+      "login": "frontend-junhuijeon",
+      "checked": true
+    },
+    {
+      "login": "frontend-soohyuncho",
+      "checked": true
+    },
+    {
+      "login": "frontend-yongholee",
+      "checked": true
+    },
+    {
+      "login": "frontend-youngeunahn",
+      "checked": true
+    },
+    {
+      "login": "heejin-1",
+      "checked": true
+    },
+    {
+      "login": "huyphammedit",
+      "checked": true
+    },
+    {
+      "login": "sukhyeon",
+      "checked": true
+    },
+    {
+      "login": "sungkyong-park",
+      "checked": true
+    },
+    {
+      "login": "william-vo307",
+      "checked": true
+    },
+    {
+      "login": "youngjaecho-medit",
+      "checked": true
+    }
+  ]
+}

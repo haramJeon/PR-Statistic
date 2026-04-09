@@ -38,6 +38,10 @@ htmlcov/
 # pyenv
 # .python-version
 
+### Project
+# Auto-generated config file
+pr_stats_config.json
+
 ### Windows
 # Windows thumbnail cache files
 Thumbs.db
